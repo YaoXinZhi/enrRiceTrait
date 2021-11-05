@@ -1,0 +1,12 @@
+MANIFEST.in
+README.md
+setup.py
+enrRiceTrait/Enrichment.py
+enrRiceTrait/PTE_config.py
+enrRiceTrait/__init__.py
+enrRiceTrait.egg-info/PKG-INFO
+enrRiceTrait.egg-info/SOURCES.txt
+enrRiceTrait.egg-info/dependency_links.txt
+enrRiceTrait.egg-info/top_level.txt
+enrRiceTrait/data/Total_Association.txt
+enrRiceTrait/data/to.wto.ro.funRiceGene.obo
