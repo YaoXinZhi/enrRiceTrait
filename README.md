@@ -42,9 +42,9 @@ Or with a bubble chart:
 
 If you use this package in your research, please cite:
 
-RTO, An Specific Corp Ontology for Rice Trait Concepts.
+RTO, An Specific Crop Ontology for Rice Trait Concepts. Xinzhi Yao, Yun Liu, Qidong Deng, Yusha Liu, Xinchen Ma, Yufei Shen, Qianqian Peng, Zaiwen Feng and Jingbo Xia.
 
-Rice trait Ontology and enrRiceTrait, An Ontology-guided Rice Trait Enrichment Tool.
+Rice trait Ontology and enrRiceTrait, An Ontology-guided Rice Trait Enrichment Tool. Xinzhi Yao, Yun Liu, Qidong Deng, Yusha Liu, Xinchen Ma, Yufei Shen, Qianqian Peng, Zaiwen Feng and Jingbo Xia.
 
 
 
