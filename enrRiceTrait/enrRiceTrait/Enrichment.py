@@ -4,18 +4,25 @@
 Created on 09/07/2020 下午4:15
 @Author: xinzhi yao
 """
-# python setup.py check
+# 1. check if the package is complete.
+# python3 setup.py check
+# 2. generate the package file.
 # python3 setup.py sdist bdist_wheel
+# only test
 # python3 -m twine upload --repository testpypi dist/*
-# python setup.py register sdist upload -r http://pypi.org
+# upload to your pypi (obselate)
+# python3 setup.py register sdist upload -r http://pypi.org
+# 3. upload to your pypi (please delete the previously .tar.gz and .whl files.)
+# twine upload dist/*
+
 
 import os
 import re
-import wget
-import matplotlib
+import math
+#import matplotlib
 import numpy as np
 import pandas as pd
-from plotnine import *
+#from plotnine import *
 import matplotlib.pyplot as plt
 from scipy.stats import hypergeom
 from collections import defaultdict
@@ -35,6 +42,10 @@ class enrichment_result:
         self.terms_p_value = defaultdict(float)
         self.terms_p_adjust = defaultdict(float)
         self.terms_q_value = defaultdict(float)
+
+        # Bonferroni or Benjamini & Hochberg correlation
+        self.terms_p_bh = defaultdict(float)
+        self.terms_p_bf = defaultdict(float)
 
         self.Gene_Ratio = defaultdict(float)
         self.BG_Ratio = defaultdict(float)
@@ -66,7 +77,6 @@ class Background:
         self.bg_gene_count = 0
         self.bg = defaultdict(int)
 
-    # todo: source_to_data
     def update_association(self, gene_id_set: set, concept_id_set: set, source: str,
                         evidence=''):
         for gene_id in gene_id_set:
@@ -81,7 +91,6 @@ class Background:
 
                 self.pair_to_source[(gene_id, concept)].add(source)
                 self.pair_to_evidence[(gene_id, concept)].add(evidence)
-
 
 class trait_concept:
     def __init__(self, trait_id: str, trait_name: str, definition: str):
@@ -140,12 +149,15 @@ class Gene_Ontology_enrichment:
                     trait = l[1]
                 elif line.startswith('def:'):
                     definition = re.findall(r'\"(.*?)\"', line)[0]
+                elif line.startswith('xref:'):
+                    xref_id = l[ 1 ]
+                    self.id_to_trait[xref_id] = trait_concept(xref_id, trait, definition)
                 elif l == [''] and _id and '/' not in _id:
                     self.id_to_trait[_id] = trait_concept(_id, trait, definition)
 
-    # todo: Distinguish different ontology
+    # Distinguish different ontology
     # todo: add the evidence to the last col of background data.
-    # todo-done: add source info in backgroud data.
+    # add source info in backgroud data.
     def load_background_data(self):
         """
         load backgroud data.
@@ -171,7 +183,6 @@ class Gene_Ontology_enrichment:
                 self.gramene_background.update_association(gramene_set, concept_set, source)
 
 
-    # fixme-done: need test
     @staticmethod
     def Hyper_Geometric_Test(N: int, m: int, k: int, x: int):
         """
@@ -189,28 +200,43 @@ class Gene_Ontology_enrichment:
         p = sum(pmf_dogs)
         return p
 
-    # fixme-done: check it.
-    def p_adjust(self, method='BH'):
+    def p_bh_and_bf_compute(self):
+        count_terms = len(self.enrich_result.terms_p_value.keys())
+
+        sorted_terms = sorted(self.enrich_result.terms_p_value, key=lambda x: self.enrich_result.terms_p_value[x])
+        #  k need add 1
+        for k, term in enumerate(sorted_terms):
+            # updated p-adjust computing for BH
+            self.enrich_result.terms_p_bh[term] = min((self.enrich_result.terms_p_value[term] * count_terms) / (k+1), 1)
+
+        for term in self.enrich_result.terms_p_value.keys():
+            # updated p-adjust computing for Bonferroui
+            self.enrich_result.terms_p_bf[term] = min(self.enrich_result.terms_p_value[term] * count_terms, 1)
+
+
+    def p_adjust_compute(self, method='BH'):
         count_terms = len(self.enrich_result.terms_p_value.keys())
 
         if method not in {'BH', 'Bonferroui'}:
             raise TypeError('Method must be "BH" or "Bonferroui"')
 
-
         if method == 'BH':
-
             sorted_terms = sorted(self.enrich_result.terms_p_value, key=lambda x: self.enrich_result.terms_p_value[x])
-            # fixme: k nedd add 1
+            #  k need add 1
             for k, term in enumerate(sorted_terms):
-                self.enrich_result.terms_p_adjust[term] = (self.p_threshold * (k+1)) / count_terms
+                # updated p-adjust computing for BH
+                # self.enrich_result.terms_p_adjust[term] = (self.p_threshold * (k+1)) / count_terms
+                self.enrich_result.terms_p_adjust[term] = min((self.enrich_result.terms_p_value[term] * count_terms) / (k+1), 1)
+
         elif method == 'Bonferroui':
             for term in self.enrich_result.terms_p_value.keys():
-                self.enrich_result.terms_p_adjust[term] = self.p_threshold / count_terms
+                # updated p-adjust computing for Bonferroui
+                # self.enrich_result.terms_p_adjust[term] = self.p_threshold / count_terms
+                self.enrich_result.terms_p_adjust[term] = min(self.enrich_result.terms_p_value[term] / count_terms, 1)
         else:
             raise TypeError("The p-value correction method must be 'BH' or 'Bonferroui'")
 
-    # fixme-done: check it.
-    def q_value(self):
+    def q_value_compute(self):
 
         count_terms = len(self.enrich_result.terms_p_value)
         sorted_terms = sorted(self.enrich_result.terms_p_value, key=lambda x: self.enrich_result.terms_p_value[x])
@@ -231,11 +257,11 @@ class Gene_Ontology_enrichment:
         self.p_threshold = p_threshold
         self.enrich_result = enrichment_result()
 
-        if id_type == 'rap':
+        if id_type.lower() == 'rap':
             bg_data = self.rap_background
-        elif id_type == 'msu':
+        elif id_type.lower() == 'msu':
             bg_data = self.msu_background
-        elif id_type == 'gramene':
+        elif id_type.lower() == 'gramene':
             bg_data = self.gramene_background
         else:
             print('Gene id type must be "RAPDB", "MSU" or "Gramene".')
@@ -245,14 +271,25 @@ class Gene_Ontology_enrichment:
 
         # query_gene_count
         k = 0
+        matched_gene_set = set()
         for _id in query_gene_set:
             if _id in bg_data.gene_set:
                 k += 1
+                matched_gene_set.add(_id)
                 # number of trait related this gene.
                 for trait_id in bg_data.gene_to_trait[_id]:
                     self.enrich_result.terms_count[trait_id] += 1
             else:
                 self.enrich_result.miss_id_set.add(_id)
+
+        print(f'{len(matched_gene_set):,}/{len(query_gene_set):,} are found in the background data,'
+              f' include: {matched_gene_set}.')
+
+        print(f'{len(self.enrich_result.miss_id_set):,}/{len(query_gene_set):,} genes are missed in the background data,'
+              f' include: {self.enrich_result.miss_id_set}.')
+
+        if len(matched_gene_set) == 0:
+            raise ValueError('No gene match in enrRiceTrait background data.')
 
         # enrichment
         for trait_id in self.enrich_result.terms_count.keys():
@@ -260,31 +297,36 @@ class Gene_Ontology_enrichment:
             m = len(bg_data.trait_to_gene[trait_id])
             x = len(trait_related_gene & query_gene_set)
 
-            # p = self.Hyper_Geometric_Test(N, m_dict[trait], m, self.enrich_result.terms_count[trait])
-            # print(N, m, k, x)
             p_value = self.Hyper_Geometric_Test(N, m, k, x)
             if p_value < self.p_threshold:
                 self.enrich_result.terms_p_value[trait_id] = p_value
-                # fixme: check here.
-                # print(trait_id, x, k)
                 self.enrich_result.Gene_Ratio[trait_id] =  x / k
                 self.enrich_result.BG_Ratio[trait_id] = k / N
 
-        # todo: method need to give users options
-        self.p_adjust(p_adjust_method)
-        self.q_value()
-
+        # method need to give users options
+        self.p_adjust_compute(p_adjust_method)
+        self.q_value_compute()
+        self.p_bh_and_bf_compute()
 
         sorted_result = sorted(self.enrich_result.terms_p_value.keys(),
                                key=lambda x: self.enrich_result.terms_p_value[x])
 
-        print(f'{"Trait id":<10}\t{"Trait name":<50}\t{"p-value":<8}\t{"p-adjust":<8}'
-              f'\t{"q-value":<8}')
+        # change the print information of this package
+        print(f'{"Trait id":<10}\t{"Trait name":<50}\t{"p-value":<8}\t{"Bonferroni adjusted p-value":<20}'
+              f'\t{"BH adjusted p-value":<8}')
         for trait_id in sorted_result:
-            print(f'{trait_id:<10}\t{self.id_to_trait[trait_id].trait_name:<50}\t'
-                  f'{self.enrich_result.terms_p_value[trait_id]:<.2e}\t'
-                  f'{self.enrich_result.terms_p_adjust[trait_id]:<.2e}\t'
-                  f'{self.enrich_result.terms_q_value[trait_id]:<.2e}')
+            print(f'{trait_id:<10}\t{self.id_to_trait[ trait_id ].trait_name:<50}\t'
+                  f'{self.enrich_result.terms_p_value[ trait_id ]:<.2e}\t'
+                  f'{self.enrich_result.terms_p_bf[ trait_id ]:<.2e}\t'
+                  f'{self.enrich_result.terms_p_bh[ trait_id ]:<.2e}')
+
+        # print(f'{"Trait id":<10}\t{"Trait name":<50}\t{"p-value":<8}\t{"p-adjust":<8}'
+        #       f'\t{"q-value":<8}')
+        # for trait_id in sorted_result:
+        #     print(f'{trait_id:<10}\t{self.id_to_trait[trait_id].trait_name:<50}\t'
+        #           f'{self.enrich_result.terms_p_value[trait_id]:<.2e}\t'
+        #           f'{self.enrich_result.terms_p_adjust[trait_id]:<.2e}\t'
+        #           f'{self.enrich_result.terms_q_value[trait_id]:<.2e}')
 
         if save_result:
             if not save_path:
@@ -303,8 +345,12 @@ class Gene_Ontology_enrichment:
         trait_GeneRatio = [self.enrich_result.Gene_Ratio[trait_id] for trait_id in sorted_trait_id]
         trait_BgRatio = [self.enrich_result.BG_Ratio[trait_id] for trait_id in sorted_trait_id]
         trait_p = [self.enrich_result.terms_p_value[trait_id] for trait_id in sorted_trait_id]
+        trait_p_bf = [self.enrich_result.terms_p_bf[trait_id] for trait_id in sorted_trait_id]
+        trait_p_bh = [self.enrich_result.terms_p_bh[trait_id] for trait_id in sorted_trait_id]
+
         trait_p_adjust = [self.enrich_result.terms_p_adjust[trait_id] for trait_id in sorted_trait_id]
         trait_q = [self.enrich_result.terms_q_value[trait_id] for trait_id in sorted_trait_id]
+
         trait_count = [self.enrich_result.terms_count[trait_id] for trait_id in sorted_trait_id]
 
         self.enrich_dataframe = pd.DataFrame({'ID': sorted_trait_id, 'Name': trait_name,
@@ -314,6 +360,8 @@ class Gene_Ontology_enrichment:
                                          'p-value': trait_p,
                                          'p-adjust': trait_p_adjust,
                                          'q-value': trait_q,
+                                         'p-bh': trait_p_bh,
+                                         'p-bf': trait_p_bf,
                                          'Count': trait_count
                                          })
 
@@ -340,8 +388,10 @@ class Gene_Ontology_enrichment:
 
         save_file = f'{save_path}/{prefix}.report.txt'
         with open(save_file, 'w') as wf:
+            # wf.write('ID\tName\tDescription\tGeneRatio\tBgRatio\tp-value\t'
+            #          'p-adjust\tq-value\tCount\n')
             wf.write('ID\tName\tDescription\tGeneRatio\tBgRatio\tp-value\t'
-                     'p-adjust\tq-value\tCount\n')
+                     'Bonferroni adjusted p-adjust\tBH adjusted p-value\tCount\n')
             for term_id in sorted_result:
                 trait_name = self.id_to_trait[term_id].trait_name
                 definition = self.id_to_trait[term_id].definition \
@@ -349,132 +399,195 @@ class Gene_Ontology_enrichment:
                 gene_ratio = enrich_result.Gene_Ratio[term_id]
                 bg_raito = enrich_result.BG_Ratio[term_id]
                 p_value = enrich_result.terms_p_value[term_id]
-                p_adjust = enrich_result.terms_p_adjust[term_id]
-                q_value = enrich_result.terms_q_value[term_id]
-                # todo: add term count for query gene set.
+                # p_adjust_value = enrich_result.terms_p_adjust[term_id]
+                # q_value = enrich_result.terms_q_value[term_id]
+
+                p_bf = enrich_result.terms_p_bf[term_id]
+                p_bh = enrich_result.terms_p_bh[term_id]
+
+                # add term count for query gene set.
                 trait_count = enrich_result.terms_count[term_id]
                 wf.write(f'{term_id}\t{trait_name}\t{definition}\t{gene_ratio}\t'
-                         f'{bg_raito}\t{p_value}\t{p_adjust}\t{q_value}\t{trait_count}\n')
+                         f'{bg_raito}\t{p_value}\t{p_bf}\t{p_bh}\t{trait_count}\n')
+                # wf.write(f'{term_id}\t{trait_name}\t{definition}\t{gene_ratio}\t'
+                #          f'{bg_raito}\t{p_value}\t{p_adjust_value}\t{q_value}\t{trait_count}\n')
         print(f'{save_file} save done.')
 
+    # latest bar plot 2023-04-23
+    def bar_stat(self, save_path='.', prefix='enrRiceTrait.bar', save_plot=False):
+        # plot data from large p-value to small p-value
+        sorted_result = sorted(self.enrich_result.terms_p_value.keys(),
+                               key=lambda x: self.enrich_result.terms_p_value[ x ],
+                               reverse=True)
 
-    # todo: add legend
-    def draw_bar(self, save_path='../result',  prefix='EnrRiceTrait', save_plot=False):
-        sorted_terms = sorted(self.enrich_result.terms_p_value,
-                              key=lambda x: self.enrich_result.terms_p_value[x], reverse=True)
+        data = [ ]
+        for term_id in sorted_result:
+            trait_name = self.id_to_trait[ term_id ].trait_name
+            trait_count = self.enrich_result.terms_count[ term_id ]
+            p_value = self.enrich_result.terms_p_value[ term_id ]
 
-        y = [f'{trait_id}\n{self.id_to_trait[trait_id].trait_name}'
-             for trait_id in sorted_terms]
-        x = [self.enrich_result.terms_count[trait_id] for trait_id in sorted_terms]
+            data.append([ trait_name, trait_count, p_value ])
 
-        # color range
-        colors = matplotlib.cm.get_cmap()
-        col = colors(np.linspace(0, 1.8, 20))
+        plot_num = 20
+        # sorted result was reversed
+        # data = data[:plot_num]
+        data = data[ -plot_num: ]
 
-        plt.figure(figsize=(16, 16))
-        plt.barh(y, x, color=col, height=0.4,
-                 alpha=0.4, align='center')
-        plt.grid(True, linestyle=':', color='r', alpha=0.6)
+        font_size = 24
+        # set color map
+        # matplotlib update
+        # cmap = plt.cm.get_cmap('RdYlBu_r')
+        cmap = plt.cm.RdYlBu_r
+        # cmap = plt.cm.RdYlBu
 
-        plt.xticks(fontproperties='Times New Roman', size=16)
-        plt.yticks(fontproperties='Times New Roman', size=16)
-        plt.subplots_adjust(top=0.9, bottom=0.12, right=0.9, left=0.24, hspace=0, wspace=0)
+        # 转换基因数和p值为浮点数
+        gene_nums = [ float(d[ 1 ]) for d in data ]
+        p_values = [ -np.log10(float(d[ 2 ])) for d in data ]
+        # p_values = [ float(d[ 2 ]) for d in data ]
 
-        # spines setting
-        ax = plt.gca()
-        ax.spines['right'].set_color('none')
-        ax.spines['top'].set_color('none')
+        # 根据p值设置颜色
+        colors = [ cmap(p) for p in np.interp(p_values, (np.min(p_values), np.max(p_values)), (0, 1)) ]
 
-        plt.xlabel('Terms count', fontproperties='Times New Roman', size=16)
-        plt.title('Enrichment bar', fontproperties='Times New Roman', size=16)
+        plt.rcParams[ 'font.family' ] = 'Times New Roman'
+
+        # 绘制水平条形图
+        fig, ax = plt.subplots(figsize=(16, 14))
+        bars = ax.barh(range(len(data)), gene_nums, color=colors, alpha=0.9)
+        ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+
+        # 设置Y轴标签和刻度
+        ax.set_yticks(range(len(data)))
+        ax.set_yticklabels([ d[ 0 ].capitalize() for d in data ], fontsize=font_size)
+
+        # fix the warning
+        ax.set_xticklabels([ i for i in range(len(gene_nums)) ], fontsize=font_size)
+        # ax.set_xticks([ i for i in range(len(gene_nums)) ], fontsize=font_size)
+
+        # 设置X轴标签和刻度
+        ax.set_xlabel('Gene Count', fontsize=font_size)
+        # ax.set_ylabel('GO Enrichment Name')
+        # ax.set_title('GO Enrichment Bar Plot')
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=np.min(p_values), vmax=np.max(p_values)))
+        sm._A = [ ]
+        cbar = fig.colorbar(sm, ax=ax)
+        # 设置 colorbar 的标签字体
+        cbar.ax.yaxis.label.set_fontfamily('Times New Roman')
+        # cbar.ax.yaxis.label.set_fontsize(16)
+        cbar.set_label('-log p-value', fontsize=font_size)
+
+        cbar.ax.tick_params(axis='both', which='major', labelsize=font_size)
+        # cbar.set_ticks([ 0, 1, 2, 3, 4 ])
+        # cbar.set_ticklabels([ 'Low', 'Medium', 'High', 'Very High', 'Max' ])
+
+        plt.subplots_adjust(left=0.37)
+
+        plt.show()
         if save_plot:
-            save_file = f'{save_path}/{prefix}.trait_count.png'
-            plt.savefig(save_file)
-            print(f'Trait Count Plot: {save_file} save done.')
+            save_file = f'{save_path}/{prefix}.bar.png'
+            plt.savefig(save_file, dpi=300, bbox_inches='tight')
+            print(f'{save_file} saved.')
 
-        return plt
+    # latest version of bubble plot 2023-04-23
+    def bubble_stat(self, save_path='.', prefix='enrRiceTrait.bubble', save_plot=False):
 
+        use_neg_log_p = True
 
-    def draw_bubble(self, save_path='../result',  prefix='EnrRiceTrait', save_plot=False):
-        sorted_terms = sorted(self.enrich_result.terms_p_value,
-                              key=lambda x: self.enrich_result.terms_p_value[x],
-                              reverse=True)
-        y = [f'{trait_id}\n{self.id_to_trait[trait_id].trait_name}' for trait_id in sorted_terms]
-        x = [self.enrich_result.Gene_Ratio[trait_id] for trait_id in sorted_terms]
-        count = [self.enrich_result.terms_count[trait_id] for trait_id in sorted_terms]
-        p = [self.enrich_result.terms_p_value[trait_id] for trait_id in sorted_terms]
-        area = np.pi * (5 * np.array(count)) ** 2
-        norm = matplotlib.colors.Normalize(vmin=min(p), vmax=max(p))
-        plt.figure(figsize=(16, 16))
+        sorted_result = sorted(self.enrich_result.terms_p_value.keys(),
+                               key=lambda x: self.enrich_result.terms_p_value[ x ],
+                               reverse=True)
 
-        plt.scatter(x, y, s=area, c=p, norm=norm, alpha=0.5)
-        plt.xlabel('Gene Ratio', fontproperties='Times New Roman', size=16)
-        plt.title('Enrichment buble', fontproperties='Times New Roman', size=16)
-        plt.colorbar()
+        # data number use to plot
+        plot_num = 20
+        # sorted result was reversed
+        # sorted_result = sorted_result[:plot_num]
+        sorted_result = sorted_result[ -plot_num: ]
 
-        plt.xticks(fontproperties='Times New Roman', size=16)
-        plt.yticks(fontproperties='Times New Roman', size=16)
-        plt.subplots_adjust(top=0.9, bottom=0.12, right=0.9, left=0.26, hspace=0, wspace=0)
+        df = defaultdict(list)
+        for term_id in sorted_result:
+            trait_name = self.id_to_trait[ term_id ].trait_name
+            trait_count = self.enrich_result.terms_count[ term_id ]
+            p_value = self.enrich_result.terms_p_value[ term_id ]
 
-        ax = plt.gca()
-        ax.spines['right'].set_color('none')
-        ax.spines['top'].set_color('none')
+            gene_ratio = self.enrich_result.Gene_Ratio[ term_id ]
 
+            df[ 'gene ratio' ].append(gene_ratio)
+            df[ 'name' ].append(trait_name)
+            df[ 'count' ].append(trait_count)
+            if use_neg_log_p:
+                df[ 'p-value' ].append(-np.log10(p_value))
+            else:
+                df[ 'p-value' ].append(p_value)
+
+        font_size = 24
+
+        # creat sub plot
+        plt.rcParams[ 'font.family' ] = 'Times New Roman'
+
+        # fig, ax = plt.subplots()
+        fig, ax = plt.subplots(figsize=(16, 14))
+
+        ax.grid(True, linestyle='--', linewidth=0.5, color='gray')
+
+        # set the scatter plot
+        cmap = 'RdYlBu_r'
+        scatter = ax.scatter(df[ 'gene ratio' ], list(map(lambda x: x.capitalize(), df[ 'name' ])), s=df[ 'count' ],
+                             c=df[ 'p-value' ], alpha=0.9, cmap=cmap)
+
+        # set the colorbar
+        cbar = plt.colorbar(scatter)
+        cbar.ax.tick_params(labelsize=font_size)
+        cbar.set_label('-log p-value', fontsize=font_size)
+
+        # set size of scatter
+        # scatter.set_sizes(200 * df[ 'count' ])
+        sizes = np.interp(df[ 'count' ], (min(df[ 'count' ]), max(df[ 'count' ])), (100, 1000))
+        scatter.set_sizes(sizes)
+
+        # set the x/y tricks and title
+        ax.set_xlabel('Gene Ratio', fontsize=font_size)
+        # ax.set_ylabel('GO Enrichment Name')
+        # ax.set_title('GO Enrichment Bubble Plot')
+
+        plt.subplots_adjust(left=0.45)
+
+        ax.tick_params(axis='both', which='major', labelsize=font_size, direction='inout')
+
+        # number of sacatter in legend
+        legend_scatter_num = 4
+        lagend_size = scatter.legend_elements(prop="sizes")
+
+        if len(lagend_size[ 0 ]) >= legend_scatter_num:
+            new_size = [ [ lagend_size[ 0 ][ i ] for i in range(legend_scatter_num) ],
+                         [ lagend_size[ 1 ][ j ] for j in range(legend_scatter_num) ] ]
+        else:
+            new_size = lagend_size
+
+        # legend1 = ax.legend(*scatter.legend_elements(prop="sizes"), loc="upper right", title="Count", ncol=1, fontsize=10, handletextpad=0.4)
+        legend1 = ax.legend(*new_size, loc="lower right", title="Count", ncol=1,
+                            fontsize=28, handletextpad=0.4)
+
+        # set the title font size for legend
+        legend1.get_title().set_fontsize(font_size)
+
+        min_count, max_count = min(df[ 'count' ]), max(df[ 'count' ])
+
+        init_num = min_count
+        # gap between two scatter size
+        gap_num = (max_count - min_count) / legend_scatter_num
+        for legend_idx in range(len(legend1.get_texts())):
+            legend_label = str(math.ceil(init_num + legend_idx * gap_num))
+            legend1.get_texts()[ legend_idx ].set_text(legend_label)
+
+        for text in legend1.get_texts():
+            text.set_fontsize(font_size)
+
+        # show the image
+        plt.show()
         if save_plot:
             save_file = f'{save_path}/{prefix}.bubble.png'
-            plt.savefig(save_file)
-            print(f'{save_file} save done.')
-
-        return plt
+            plt.savefig(save_file, dpi=300, bbox_inches='tight')
+            print(f'{save_file} saved.')
 
 
-    def draw_bar_new(self, save_path='../result',  prefix='EnrRiceTrait', save_plot=False):
 
-        self.enrich_dataframe = self.enrich_dataframe.sort_values(by='p-value')
-
-        p1 = (ggplot( self.enrich_dataframe) +
-              geom_col(aes(x='ID_Name', y='Count', color='p-value', fill='p-value')) +
-              geom_text(aes(x='ID_Name', y= self.enrich_dataframe[ 'Count' ] + 1.2, label='p_value_str')) +
-              coord_flip() +
-              ylim(0, 8) +
-              xlab('') + ylab('Count') + labs(color='p-value', fill='p-value') +
-              scale_color_cmap(cmap_name='plasma', breaks=[ 0.01, 0.02, 0.03, 0.04 ],
-                               labels=['1e-2', '2e-2', '3e-2', '4e-2']) +
-              scale_fill_cmap(cmap_name='plasma', breaks=[ 0.01, 0.02, 0.03, 0.04 ],
-                              labels=['1e-2', '2e-2', '3e-2', '4e-2']) +
-              theme(
-                  panel_background=element_blank(),
-                  panel_grid=element_blank()
-              ) +
-              ggtitle('Bar Plot')
-              )
-
-        if save_plot:
-            save_file = f'{save_path}/{prefix}.bar.new.png'
-            p1.save(save_file, width=7, height=4, dpi=150)
-
-        return p1
-
-    def draw_bubble_new(self, save_path='../result',  prefix='EnrRiceTrait', save_plot=False):
-
-        self.enrich_dataframe = self.enrich_dataframe.sort_values(by='p-value')
-
-        # shape='Class'
-        p2 = (ggplot(self.enrich_dataframe) +
-              geom_point(aes(
-                  x='GeneRatio', y='ID_Name',
-                  size='Count', color='p-value', fill='p-value')) +
-              theme(legend_direction='vertical', legend_box='horizontal') +
-              xlab('Gene Ratio') + ylab('') +
-              labs(size='Count', color='p-value', fill='p-value') +
-              scale_color_cmap(cmap_name='plasma') +
-              scale_fill_cmap(cmap_name='plasma') +
-              ggtitle('Babble Plot')
-              )
-
-        if save_path:
-            save_file = f'{save_path}/{prefix}.bubble2.png'
-            p2.save(save_file, width=6, height=4, dpi=150)
-
-        return p2
 
