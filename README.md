@@ -1,6 +1,6 @@
 # enrRiceTrait
 
-enrRiceTrait is a Python package that provides convenient functionality for rice-specific trait enrichment analysis. It depends on several Python packages, including numpy, math, matplotlib, scipy, and pandas, and requires Python 3.7+.
+enrRiceTrait is a Python package that provides convenient functionality for rice-specific trait enrichment analysis. It depends on several Python packages, including `numpy`, `math`, `matplotlib`, `scipy`, and `pandas`, and requires `Python 3.9`.
 
 ## Installation and Update
 
@@ -38,24 +38,13 @@ Or with a bubble chart:
 
     Enricher.bubble()
 
-
-The meaning of each line of code is as follows:
-
-source_set={"Oryzabase","TAS","ExactMatching", "SemanticComputing"}: Set the background data source for enrichment analysis.  
-query_gene_set={OsXXXX, OsXXXX, ... }: Set the query gene set.  
-Enricher=enrRiceTrait.Gene_Ontology_enrichment(source_set): Initialize Enricher with the selected background data and specify the provided query rice gene type.  
-Enricher.ontology_enrichment(query_gene_set,"RAP"): Perform the enrichment analysis.  
-Enricher.bar_stat(): Visualize the results with a bar chart.  
-Enricher.bubble(): Visualize the results with a bubble chart.  
-
 ## Citation
 
 If you use this package in your research, please cite:
 
 RTO, An Specific Corp Ontology for Rice Trait Concepts.
 
-Rice trait Ontology and enrRiceTrait, An Ontology-guided Rice Trait Enrichment Tool. [insert citation]
-
+Rice trait Ontology and enrRiceTrait, An Ontology-guided Rice Trait Enrichment Tool.
 
 
 
