@@ -14,7 +14,7 @@ To update the package, simply run:
 
 ## Usage
 
-To perform enrichment analysis, first select the background data to enrich against. This can be done using structured databases such as Oryzabase and TAS or unstructured databases such as ExactMatching and SemanticComputing. To set the source set, use the following command:
+To perform enrichment analysis, first step is to select the background data. This can be done using structured databases such as Oryzabase and TAS or unstructured databases such as ExactMatching and SemanticComputing. To set the source set, use the following command:
 
     source_set={"Oryzabase","TAS","ExactMatching", "SemanticComputing"}
 
