@@ -22,11 +22,11 @@ Next, set the query gene set. This package supports multiple types of query rice
 
     query_gene_set={OsXXXX, OsXXXX, ... }
 
-Initialize the Enricher with the selected background data and specify the provided query rice gene type:
+Initialize the Enricher with the selected background data:
 
     Enricher=enrRiceTrait.Gene_Ontology_enrichment(source_set)
 
-Perform the enrichment analysis:
+ Specify the provided query rice gene ID type, and perform the enrichment analysis:
 
     Enricher.ontology_enrichment(query_gene_set,"RAP")
 
