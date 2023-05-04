@@ -36,7 +36,7 @@ Visualize the results with a bar chart:
 
 Or with a bubble chart:
 
-    Enricher.bubble()
+    Enricher.bubble_stat()
 
 ## Citation
 
